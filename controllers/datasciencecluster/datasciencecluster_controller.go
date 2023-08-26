@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	dsci "github.com/opendatahub-io/opendatahub-operator/v2/apis/dscinitialization/v1alpha1"
+	"github.com/pkg/errors"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -30,13 +32,6 @@ import (
 
 	dsc "github.com/opendatahub-io/opendatahub-operator/v2/apis/datasciencecluster/v1alpha1"
 	"github.com/opendatahub-io/opendatahub-operator/v2/components"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/codeflare"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/dashboard"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/datasciencepipelines"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/kserve"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/modelmeshserving"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/ray"
-	"github.com/opendatahub-io/opendatahub-operator/v2/components/workbenches"
 	appsv1 "k8s.io/api/apps/v1"
 	netv1 "k8s.io/api/networking/v1"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -148,46 +143,24 @@ func (r *DataScienceClusterReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Initialize error list, instead of returning errors after every component is deployed
 	componentErrorList := make(map[string]error)
 
-	// reconcile dashboard component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.Dashboard)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[dashboard.ComponentName] = err
-	}
+	componentsPtr := &instance.Spec.Components
+	definedComponents := reflect.ValueOf(componentsPtr).Elem()
+	for i := 0; i < definedComponents.NumField(); i++ {
+		c := definedComponents.Field(i)
 
-	// reconcile DataSciencePipelines component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.DataSciencePipelines)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[datasciencepipelines.ComponentName] = err
-	}
+		if c.CanAddr() {
+			component, ok := c.Addr().Interface().(components.ComponentInterface)
+			if !ok {
+				// TODO make it better
+				return ctrl.Result{}, errors.New("this is not a pointer to ComponentInterface!")
+			}
 
-	// reconcile Workbench component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.Workbenches)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[workbenches.ComponentName] = err
-	}
+			if instance, err = r.reconcileSubComponent(instance, component); err != nil {
+				// no need to log any errors as this is done in the reconcileSubComponent method
+				componentErrorList[component.GetComponentName()] = err
+			}
+		}
 
-	// reconcile Kserve component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.Kserve)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[kserve.ComponentName] = err
-	}
-
-	// reconcile ModelMesh component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.ModelMeshServing)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[modelmeshserving.ComponentName] = err
-	}
-
-	// reconcile CodeFlare component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.CodeFlare)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[codeflare.ComponentName] = err
-	}
-
-	// reconcile Ray component
-	if instance, err = r.reconcileSubComponent(instance, &(instance.Spec.Components.Ray)); err != nil {
-		// no need to log any errors as this is done in the reconcileSubComponent method
-		componentErrorList[ray.ComponentName] = err
 	}
 
 	// Process errors for components
