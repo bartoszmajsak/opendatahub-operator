@@ -38,15 +38,7 @@ func (d *DataSciencePipelines) GetComponentName() string {
 // Verifies that Dashboard implements ComponentInterface
 var _ components.ComponentInterface = (*DataSciencePipelines)(nil)
 
-func (d *DataSciencePipelines) IsEnabled() bool {
-	return d.Enabled
-}
-
-func (d *DataSciencePipelines) SetEnabled(enabled bool) {
-	d.Enabled = enabled
-}
-
-func (d *DataSciencePipelines) ReconcileComponent(owner metav1.Object, client client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (d *DataSciencePipelines) ReconcileComponent(owner metav1.Object, client client.Client, scheme *runtime.Scheme, namespace string) error {
 
 	// Update image parameters
 	if err := deploy.ApplyImageParams(Path, imageParamMap); err != nil {
@@ -56,7 +48,7 @@ func (d *DataSciencePipelines) ReconcileComponent(owner metav1.Object, client cl
 	err := deploy.DeployManifestsFromPath(owner, client, ComponentName,
 		Path,
 		namespace,
-		scheme, enabled)
+		scheme, d.Enabled)
 	return err
 
 }

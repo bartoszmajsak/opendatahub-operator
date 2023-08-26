@@ -33,10 +33,10 @@ func (d *Ray) GetComponentName() string {
 // Verifies that Ray implements ComponentInterface
 var _ components.ComponentInterface = (*Ray)(nil)
 
-func (d *Ray) ReconcileComponent(owner metav1.Object, client client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (d *Ray) ReconcileComponent(owner metav1.Object, client client.Client, scheme *runtime.Scheme, namespace string) error {
 
 	// Update image parameters
-	if enabled {
+	if d.Enabled {
 		if err := deploy.ApplyImageParams(RayPath, imageParamMap); err != nil {
 			return err
 		}
@@ -45,7 +45,7 @@ func (d *Ray) ReconcileComponent(owner metav1.Object, client client.Client, sche
 	err := deploy.DeployManifestsFromPath(owner, client, ComponentName,
 		RayPath,
 		namespace,
-		scheme, enabled)
+		scheme, d.Enabled)
 	return err
 
 }

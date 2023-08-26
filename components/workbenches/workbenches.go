@@ -36,15 +36,7 @@ func (w *Workbenches) SetImageParamsMap(imageMap map[string]string) map[string]s
 // Verifies that Dashboard implements ComponentInterface
 var _ components.ComponentInterface = (*Workbenches)(nil)
 
-func (w *Workbenches) IsEnabled() bool {
-	return w.Enabled
-}
-
-func (w *Workbenches) SetEnabled(enabled bool) {
-	w.Enabled = enabled
-}
-
-func (w *Workbenches) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (w *Workbenches) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, namespace string) error {
 	// Set default notebooks namespace
 	// Create rhods-notebooks namespace in managed platforms
 	platform, err := deploy.GetPlatform(cli)
@@ -52,7 +44,7 @@ func (w *Workbenches) ReconcileComponent(owner metav1.Object, cli client.Client,
 		return err
 	}
 
-	if enabled {
+	if w.Enabled {
 		if platform != deploy.OpenDataHub {
 			err := common.CreateNamespace(cli, "rhods-notebooks")
 			if err != nil {
@@ -75,7 +67,7 @@ func (w *Workbenches) ReconcileComponent(owner metav1.Object, cli client.Client,
 	err = deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 		notebookControllerPath,
 		namespace,
-		scheme, enabled)
+		scheme, w.Enabled)
 	if err != nil {
 		return err
 	}
@@ -87,7 +79,7 @@ func (w *Workbenches) ReconcileComponent(owner metav1.Object, cli client.Client,
 	err = deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 		notebookImagesPath,
 		namespace,
-		scheme, enabled)
+		scheme, w.Enabled)
 	return err
 
 }

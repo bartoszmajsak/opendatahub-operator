@@ -41,18 +41,10 @@ func (m *ModelMeshServing) SetImageParamsMap(imageMap map[string]string) map[str
 // Verifies that Dashboard implements ComponentInterface
 var _ components.ComponentInterface = (*ModelMeshServing)(nil)
 
-func (m *ModelMeshServing) IsEnabled() bool {
-	return m.Enabled
-}
-
-func (m *ModelMeshServing) SetEnabled(enabled bool) {
-	m.Enabled = enabled
-}
-
-func (m *ModelMeshServing) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (m *ModelMeshServing) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, namespace string) error {
 
 	// Update Default rolebinding
-	if enabled {
+	if m.Enabled {
 		err := common.UpdatePodSecurityRolebinding(cli, []string{"modelmesh", "modelmesh-controller", "odh-model-controller", "odh-prometheus-operator", "prometheus-custom"}, namespace)
 		if err != nil {
 			return err
@@ -66,7 +58,7 @@ func (m *ModelMeshServing) ReconcileComponent(owner metav1.Object, cli client.Cl
 	err := deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 		Path,
 		namespace,
-		scheme, enabled)
+		scheme, m.Enabled)
 
 	if err != nil {
 		return err
@@ -91,7 +83,7 @@ func (m *ModelMeshServing) ReconcileComponent(owner metav1.Object, cli client.Cl
 	err = deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 		monitoringPath,
 		monitoringNamespace,
-		scheme, enabled)
+		scheme, m.Enabled)
 
 	return err
 }

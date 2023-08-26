@@ -49,7 +49,7 @@ func (d *Dashboard) GetComponentName() string {
 // Verifies that Dashboard implements ComponentInterface
 var _ components.ComponentInterface = (*Dashboard)(nil)
 
-func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, namespace string) error {
 
 	// TODO: Add any additional tasks if required when reconciling component
 
@@ -58,7 +58,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		return err
 	}
 	// Update Default rolebinding
-	if enabled {
+	if d.Enabled {
 		if platform == deploy.OpenDataHub {
 			err := common.UpdatePodSecurityRolebinding(cli, []string{"odh-dashboard"}, namespace)
 			if err != nil {
@@ -94,7 +94,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 			err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 				PathODHDashboardConfig,
 				namespace,
-				scheme, enabled)
+				scheme, d.Enabled)
 			if err != nil {
 				return fmt.Errorf("failed to set dashboard config from %s: %v", PathODHDashboardConfig, err)
 			}
@@ -103,12 +103,12 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 			err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 				PathOVMS,
 				namespace,
-				scheme, enabled)
+				scheme, d.Enabled)
 			if err != nil {
 				return fmt.Errorf("failed to set dashboard OVMS from %s: %v", PathOVMS, err)
 			}
 
-			if enabled {
+			if d.Enabled {
 				// Apply anaconda config
 				err = common.CreateSecret(cli, "anaconda-ce-access", namespace)
 				if err != nil {
@@ -118,7 +118,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 			err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 				PathAnaconda,
 				namespace,
-				scheme, enabled)
+				scheme, d.Enabled)
 			if err != nil {
 				return fmt.Errorf("failed to deploy anaconda resources from %s: %v", PathAnaconda, err)
 			}
@@ -135,7 +135,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		err = deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 			Path,
 			namespace,
-			scheme, enabled)
+			scheme, d.Enabled)
 		if err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 			PathSupported,
 			namespace,
-			scheme, enabled)
+			scheme, d.Enabled)
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 			PathISVSM,
 			namespace,
-			scheme, enabled)
+			scheme, d.Enabled)
 		if err != nil {
 			return fmt.Errorf("failed to set dashboard ISV from %s: %v", PathISVSM, err)
 		}
@@ -177,7 +177,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 			PathConsoleLink,
 			namespace,
-			scheme, enabled)
+			scheme, d.Enabled)
 		if err != nil {
 			return fmt.Errorf("failed to set dashboard consolelink from %s", PathConsoleLink)
 		}
@@ -186,7 +186,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 			PathISVAddOn,
 			namespace,
-			scheme, enabled)
+			scheme, d.Enabled)
 		if err != nil {
 			return fmt.Errorf("failed to set dashboard ISV from %s: %v", PathISVAddOn, err)
 		}
@@ -207,7 +207,7 @@ func (d *Dashboard) ReconcileComponent(owner metav1.Object, cli client.Client, s
 		err = deploy.DeployManifestsFromPath(owner, cli, ComponentNameSupported,
 			PathConsoleLink,
 			namespace,
-			scheme, enabled)
+			scheme, d.Enabled)
 		if err != nil {
 			return fmt.Errorf("failed to set dashboard consolelink from %s", PathConsoleLink)
 		}

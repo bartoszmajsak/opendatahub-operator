@@ -44,15 +44,7 @@ func (d *Kserve) GetComponentName() string {
 // Verifies that Kserve implements ComponentInterface
 var _ components.ComponentInterface = (*Kserve)(nil)
 
-func (d *Kserve) IsEnabled() bool {
-	return d.Enabled
-}
-
-func (d *Kserve) SetEnabled(enabled bool) {
-	d.Enabled = enabled
-}
-
-func (d *Kserve) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (d *Kserve) ReconcileComponent(owner metav1.Object, cli client.Client, scheme *runtime.Scheme, namespace string) error {
 
 	// Update image parameters
 	if err := deploy.ApplyImageParams(Path, imageParamMap); err != nil {
@@ -62,11 +54,11 @@ func (d *Kserve) ReconcileComponent(owner metav1.Object, cli client.Client, sche
 	if err := deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 		Path,
 		namespace,
-		scheme, enabled); err != nil {
+		scheme, d.Enabled); err != nil {
 		return err
 	}
 
-	if enabled {
+	if d.Enabled {
 		err := common.UpdatePodSecurityRolebinding(cli, []string{"odh-model-controller"}, namespace)
 		if err != nil {
 			return err
@@ -81,7 +73,7 @@ func (d *Kserve) ReconcileComponent(owner metav1.Object, cli client.Client, sche
 	if err := deploy.DeployManifestsFromPath(owner, cli, ComponentName,
 		DependentPath,
 		namespace,
-		scheme, enabled); err != nil {
+		scheme, d.Enabled); err != nil {
 		return err
 	}
 	return nil

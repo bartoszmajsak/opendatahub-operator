@@ -35,9 +35,9 @@ func (d *CodeFlare) GetComponentName() string {
 // Verifies that CodeFlare implements ComponentInterface
 var _ components.ComponentInterface = (*CodeFlare)(nil)
 
-func (d *CodeFlare) ReconcileComponent(owner metav1.Object, client client.Client, scheme *runtime.Scheme, enabled bool, namespace string) error {
+func (d *CodeFlare) ReconcileComponent(owner metav1.Object, client client.Client, scheme *runtime.Scheme, namespace string) error {
 
-	if enabled {
+	if d.Enabled {
 		// check if the CodeFlare operator is installed
 		// codeflare operator not installed
 		found, err := deploy.SubscriptionExists(client, CodeflareOperatorNamespace, CodeflareOperator)
@@ -60,7 +60,7 @@ func (d *CodeFlare) ReconcileComponent(owner metav1.Object, client client.Client
 	err := deploy.DeployManifestsFromPath(owner, client, ComponentName,
 		CodeflarePath,
 		namespace,
-		scheme, enabled)
+		scheme, d.Enabled)
 
 	return err
 
