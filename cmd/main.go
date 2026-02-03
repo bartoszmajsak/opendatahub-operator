@@ -47,6 +47,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/fields"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -72,6 +73,7 @@ import (
 	infrav1 "github.com/opendatahub-io/opendatahub-operator/v2/api/infrastructure/v1"
 	infrav1alpha1 "github.com/opendatahub-io/opendatahub-operator/v2/api/infrastructure/v1alpha1"
 	serviceApi "github.com/opendatahub-io/opendatahub-operator/v2/api/services/v1alpha1"
+	modelsasservicectrl "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/modelsasservice"
 	cr "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/registry"
 	dscctrl "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/datasciencecluster"
 	dscictrl "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/dscinitialization"
@@ -81,6 +83,7 @@ import (
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/cluster/gvk"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/initialinstall"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/logger"
+	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/metadata/labels"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/resources"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/upgrade"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/utils/flags"
@@ -94,7 +97,6 @@ import (
 	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/mlflowoperator"
 	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/modelcontroller"
 	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/modelregistry"
-	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/modelsasservice"
 	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/ray"
 	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/sparkoperator"
 	_ "github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/trainer"
@@ -395,8 +397,18 @@ func main() { //nolint:funlen,maintidx,gocyclo
 		os.Exit(1)
 	}
 
-	// Initialize component reconcilers
-	if err = CreateComponentReconcilers(ctx, mgr); err != nil {
+	// Create MaaS-specific cache with label filtering for multi-tenant support.
+	// This allows MaaS to watch resources across dynamic tenant namespaces
+	// while other components keep their namespace-scoped caching.
+	maasClient, err := createMaaSClient(ctx, mgr)
+	if err != nil {
+		setupLog.Error(err, "unable to create MaaS client")
+		os.Exit(1)
+	}
+
+	// Initialize component reconcilers with MaaS client in context
+	maasCtx := modelsasservicectrl.ContextWithClient(ctx, maasClient)
+	if err = CreateComponentReconcilers(maasCtx, mgr); err != nil {
 		setupLog.Error(err, "unable to create component controllers")
 		os.Exit(1)
 	}
@@ -532,6 +544,55 @@ func createODHGeneralCacheConfig(platform common.Platform) (map[string]cache.Con
 	namespaceConfigs["openshift-ingress"] = cache.Config{}   // for gateway auth proxy resources
 
 	return namespaceConfigs, nil
+}
+
+// createMaaSClient creates a client with a label-filtered cache for MaaS.
+// This allows the MaaS controller to watch resources across dynamic tenant namespaces
+// while filtering to only MaaS-labeled resources (app.opendatahub.io/modelsasservice=true).
+func createMaaSClient(ctx context.Context, mgr manager.Manager) (client.Client, error) {
+	cfg := mgr.GetConfig()
+	scheme := mgr.GetScheme()
+
+	// MaaS label selector - only watch resources with app.opendatahub.io/modelsasservice=true
+	maasLabelSelector := k8slabels.SelectorFromSet(k8slabels.Set{
+		labels.ODH.Component(componentApi.ModelsAsServiceComponentName): labels.True,
+	})
+
+	// Create MaaS-specific cache with label filtering (cluster-wide but only MaaS resources)
+	maasCache, err := cache.New(cfg, cache.Options{
+		Scheme: scheme,
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ConfigMap{}:           {Label: maasLabelSelector},
+			&corev1.Service{}:             {Label: maasLabelSelector},
+			&corev1.ServiceAccount{}:      {Label: maasLabelSelector},
+			&appsv1.Deployment{}:          {Label: maasLabelSelector},
+			&networkingv1.NetworkPolicy{}: {Label: maasLabelSelector},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MaaS cache: %w", err)
+	}
+
+	// Add the cache to the manager so it starts with the manager
+	if err := mgr.Add(maasCache); err != nil {
+		return nil, fmt.Errorf("failed to add MaaS cache to manager: %w", err)
+	}
+
+	// Create a client that uses the MaaS cache for reads
+	maasClient, err := client.New(cfg, client.Options{
+		Scheme: scheme,
+		Cache: &client.CacheOptions{
+			Reader: maasCache,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MaaS client: %w", err)
+	}
+
+	logf.FromContext(ctx).Info("MaaS client created with label-filtered cache",
+		"label", labels.ODH.Component(componentApi.ModelsAsServiceComponentName))
+
+	return maasClient, nil
 }
 
 func CreateComponentReconcilers(ctx context.Context, mgr manager.Manager) error {
