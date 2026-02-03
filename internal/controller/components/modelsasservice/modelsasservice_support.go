@@ -28,6 +28,14 @@ import (
 )
 
 // maasClientKey is a context key for the MaaS-specific client.
+// Context-based injection is used to pass the label-filtered client without
+// changing the uniform ComponentHandler interface (all components implement
+// NewComponentReconciler(ctx, mgr)). MaaS extracts the client while other
+// components ignore it, with graceful fallback to manager's default client.
+//
+// PoC consideration: For production, evaluate whether this pattern should be
+// generalized (e.g., ComponentOptions struct) or if MaaS should have a distinct
+// initialization path given its unique multi-tenant cache requirements.
 type maasClientKey struct{}
 
 // ContextWithClient returns a new context with the MaaS client.
