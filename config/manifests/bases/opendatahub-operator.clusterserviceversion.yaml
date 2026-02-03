@@ -106,7 +106,11 @@ spec:
       kind: ModelRegistry
       name: modelregistries.components.platform.opendatahub.io
       version: v1alpha1
-    - description: ModelsAsService is the Schema for the modelsasservice API
+    - description: |-
+        ModelsAsService is the Schema for the modelsasservice API.
+        The metadata.name serves as the tenant identifier and determines the target namespace
+        where MaaS resources (maas-api, AuthPolicy) will be deployed.
+        Multiple ModelsAsService instances can coexist for multi-tenant deployments.
       displayName: Models As Service
       kind: ModelsAsService
       name: modelsasservices.components.platform.opendatahub.io

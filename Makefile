@@ -437,8 +437,9 @@ bundle: prepare operator-sdk ## Generate bundle manifests and metadata, then val
 	$(SED_COMMAND) -i 's#COPY #COPY --from=builder /workspace/#' bundle.Dockerfile
 	cat Dockerfiles/build-bundle.Dockerfile bundle.Dockerfile > Dockerfiles/$(BUNDLE_DOCKERFILE_FILENAME)
 	rm bundle.Dockerfile
-	rm -f $(BUNDLE_DIR)/manifests/opendatahub-operator-webhook-service_v1_service.yaml
-	rm -f $(BUNDLE_DIR)/manifests/rhods-operator-webhook-service_v1_service.yaml
+	# NOTE: Keep webhook-service in bundle - CRD conversion webhooks reference this service name
+	# rm -f $(BUNDLE_DIR)/manifests/opendatahub-operator-webhook-service_v1_service.yaml
+	# rm -f $(BUNDLE_DIR)/manifests/rhods-operator-webhook-service_v1_service.yaml
 CLEANFILES += rhoai-bundle odh-bundle
 
 .PHONY: bundle-all
@@ -526,6 +527,9 @@ catalog-build: catalog-prepare
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) image-push IMG=$(CATALOG_IMG)
+
+.PHONY: catalog
+catalog: catalog-build catalog-push ## Build and push catalog image.
 
 TOOLBOX_GOLANG_VERSION := 1.25.0
 
