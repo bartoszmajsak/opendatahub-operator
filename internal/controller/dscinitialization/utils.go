@@ -9,7 +9,6 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -192,45 +191,11 @@ func ReconcileDefaultNetworkPolicy(
 		return nil
 	}
 
-	// Expected namespace for the given name in ODH
-	np := networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      dscInit.Spec.ApplicationsNamespace,
-			Namespace: dscInit.Spec.ApplicationsNamespace,
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From: createNetworkPolicyPeer(labels.ODH.OwnedNamespace, labels.True)}, {
-				From: createNetworkPolicyPeer(labels.CustomizedAppNamespace, labels.True)}, {
-				From: createNetworkPolicyPeer("network.openshift.io/policy-group", "ingress")}, {
-				From: createNetworkPolicyPeer("kubernetes.io/metadata.name", "openshift-host-network")}, {
-				From: createNetworkPolicyPeer("kubernetes.io/metadata.name", "openshift-monitoring")}, {
-				From: createNetworkPolicyPeer("kubernetes.io/metadata.name", "openshift-cluster-observability-operator")},
-			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeIngress,
-			},
-		},
-	}
+	// Create default NetworkPolicy for ODH applications namespace
+	np := resources.CreateDefaultNetworkPolicy(dscInit.Spec.ApplicationsNamespace)
 
-	if err := resources.EnsureGroupVersionKind(cli.Scheme(), &np); err != nil {
-		return fmt.Errorf("unable to set GVK to NetworkPolicy: %w", err)
-	}
-
-	if err := controllerutil.SetControllerReference(dscInit, &np, cli.Scheme()); err != nil {
-		return fmt.Errorf("unable to add OwnerReference to the Network policy: %w", err)
-	}
-
-	err := resources.Apply(
-		ctx,
-		cli,
-		&np,
-		client.FieldOwner(fieldManager),
-		client.ForceOwnership,
-	)
-
-	if err != nil {
-		return err
+	if err := resources.ApplyNetworkPolicy(ctx, cli, np, dscInit, fieldManager); err != nil {
+		return fmt.Errorf("unable to create NetworkPolicy: %w", err)
 	}
 
 	return nil
@@ -272,12 +237,4 @@ func GenerateRandomHex(length int) ([]byte, error) {
 	}
 
 	return randomBytes, nil
-}
-
-func createNetworkPolicyPeer(key, value string) []networkingv1.NetworkPolicyPeer {
-	return []networkingv1.NetworkPolicyPeer{{
-		NamespaceSelector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{key: value},
-		},
-	}}
 }
