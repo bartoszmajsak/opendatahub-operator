@@ -25,7 +25,7 @@ func TestGatewayValidation(t *testing.T) {
 		t.Run("should accept valid Gateway that exists in the cluster", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -50,15 +50,19 @@ func TestGatewayValidation(t *testing.T) {
 		t.Run("should accept empty Gateway (uses defaults) when default gateway exists", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{},
 				},
 			}
 
+			// Default gateway name is computed as {tenant-name}-gateway
+			expectedGatewayName := maas.GetGatewayName()
+			expectedGatewayNamespace := componentApi.DefaultGatewayNamespace
+
 			// Create a fake client with the default gateway present
-			cli := createFakeClientWithGateway(DefaultGatewayNamespace, DefaultGatewayName)
+			cli := createFakeClientWithGateway(expectedGatewayNamespace, expectedGatewayName)
 
 			rr := &types.ReconciliationRequest{
 				Instance: maas,
@@ -68,25 +72,27 @@ func TestGatewayValidation(t *testing.T) {
 			err := validateGateway(t.Context(), rr)
 			g.Expect(err).ShouldNot(HaveOccurred())
 
-			// Verify defaults were applied
-			g.Expect(maas.Spec.GatewayRef.Namespace).Should(Equal(DefaultGatewayNamespace))
-			g.Expect(maas.Spec.GatewayRef.Name).Should(Equal(DefaultGatewayName))
+			// Verify defaults are used via helper methods (spec remains empty, helpers provide defaults)
+			g.Expect(maas.GetGatewayNamespace()).Should(Equal(expectedGatewayNamespace))
+			g.Expect(maas.GetGatewayName()).Should(Equal(expectedGatewayName))
 		})
 
-		t.Run("should reject Gateway with only namespace specified", func(t *testing.T) {
+		t.Run("should accept Gateway with only namespace specified (uses default name)", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
-						Namespace: "some-namespace",
+						Namespace: "custom-namespace",
 						Name:      "",
 					},
 				},
 			}
 
-			cli := createFakeClientWithGateway("some-namespace", "some-gateway")
+			// Default name is {tenant}-gateway, so create gateway with that name
+			defaultGatewayName := maas.GetGatewayName()
+			cli := createFakeClientWithGateway("custom-namespace", defaultGatewayName)
 
 			rr := &types.ReconciliationRequest{
 				Instance: maas,
@@ -94,24 +100,28 @@ func TestGatewayValidation(t *testing.T) {
 			}
 
 			err := validateGateway(t.Context(), rr)
-			g.Expect(err).Should(HaveOccurred())
-			g.Expect(err.Error()).Should(ContainSubstring("invalid gateway specification: when specifying a custom gateway, both namespace and name must be provided"))
+			g.Expect(err).ShouldNot(HaveOccurred())
+
+			// Verify custom namespace is used with default name
+			g.Expect(maas.GetGatewayNamespace()).Should(Equal("custom-namespace"))
+			g.Expect(maas.GetGatewayName()).Should(Equal(defaultGatewayName))
 		})
 
-		t.Run("should reject Gateway with only name specified", func(t *testing.T) {
+		t.Run("should accept Gateway with only name specified (uses default namespace)", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
 						Namespace: "",
-						Name:      "some-name",
+						Name:      "custom-gateway",
 					},
 				},
 			}
 
-			cli := createFakeClientWithGateway("some-namespace", "some-name")
+			// Default namespace is used when not specified
+			cli := createFakeClientWithGateway(componentApi.DefaultGatewayNamespace, "custom-gateway")
 
 			rr := &types.ReconciliationRequest{
 				Instance: maas,
@@ -119,14 +129,17 @@ func TestGatewayValidation(t *testing.T) {
 			}
 
 			err := validateGateway(t.Context(), rr)
-			g.Expect(err).Should(HaveOccurred())
-			g.Expect(err.Error()).Should(ContainSubstring("invalid gateway specification: when specifying a custom gateway, both namespace and name must be provided"))
+			g.Expect(err).ShouldNot(HaveOccurred())
+
+			// Verify default namespace is used with custom name
+			g.Expect(maas.GetGatewayNamespace()).Should(Equal(componentApi.DefaultGatewayNamespace))
+			g.Expect(maas.GetGatewayName()).Should(Equal("custom-gateway"))
 		})
 
 		t.Run("should reject when specified Gateway does not exist in the cluster", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -153,7 +166,7 @@ func TestGatewayValidation(t *testing.T) {
 		t.Run("should reject when default Gateway does not exist in the cluster", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{}, // Uses defaults
@@ -182,7 +195,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should update AuthPolicy namespace and targetRef when found", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -215,7 +228,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should succeed silently when AuthPolicy is not found in resources", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -238,7 +251,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should not modify AuthPolicy with different name", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -272,7 +285,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should only modify matching AuthPolicy when multiple resources present", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -318,7 +331,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should update DestinationRule namespace when found", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -345,7 +358,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should not modify DestinationRule with different name", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -375,7 +388,7 @@ func TestConfigureGatewayNamespaceResources(t *testing.T) {
 		t.Run("should update both AuthPolicy and DestinationRule namespaces", func(t *testing.T) {
 			maas := &componentApi.ModelsAsService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: componentApi.ModelsAsServiceInstanceName,
+					Name: componentApi.DefaultModelsAsServiceInstanceName,
 				},
 				Spec: componentApi.ModelsAsServiceSpec{
 					GatewayRef: componentApi.GatewayRef{
@@ -469,4 +482,279 @@ func createFakeClientWithoutGateway() client.Client {
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
 		Build()
+}
+
+// =============================================================================
+// Multi-Tenant Tests
+// =============================================================================
+
+func TestMultiTenantNamespaceDerivation(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should derive different namespaces from different CR names", func(t *testing.T) {
+		tenants := []struct {
+			crName            string
+			expectedNamespace string
+			expectedTenant    string
+		}{
+			{"tenant-a", "tenant-a", "tenant-a"},
+			{"tenant-b", "tenant-b", "tenant-b"},
+			{"production", "production", "production"},
+			{"dev-team-1", "dev-team-1", "dev-team-1"},
+		}
+
+		for _, tc := range tenants {
+			maas := &componentApi.ModelsAsService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.crName,
+				},
+			}
+
+			g.Expect(maas.GetTenantNamespace()).Should(Equal(tc.expectedNamespace),
+				"CR name %q should derive namespace %q", tc.crName, tc.expectedNamespace)
+			g.Expect(maas.GetTenantName()).Should(Equal(tc.expectedTenant),
+				"CR name %q should derive tenant name %q", tc.crName, tc.expectedTenant)
+		}
+	})
+
+	t.Run("should derive different gateway names per tenant", func(t *testing.T) {
+		tenantA := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-a"},
+		}
+		tenantB := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-b"},
+		}
+
+		g.Expect(tenantA.GetGatewayName()).Should(Equal("tenant-a-gateway"))
+		g.Expect(tenantB.GetGatewayName()).Should(Equal("tenant-b-gateway"))
+		g.Expect(tenantA.GetGatewayName()).ShouldNot(Equal(tenantB.GetGatewayName()),
+			"Different tenants should have different default gateway names")
+	})
+}
+
+func TestMultiTenantResourceIsolation(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should configure resources with tenant-specific namespaces", func(t *testing.T) {
+		tenantA := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-a"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				GatewayRef: componentApi.GatewayRef{
+					Namespace: "gateway-ns",
+					Name:      "shared-gateway",
+				},
+			},
+		}
+
+		tenantB := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-b"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				GatewayRef: componentApi.GatewayRef{
+					Namespace: "gateway-ns",
+					Name:      "shared-gateway",
+				},
+			},
+		}
+
+		// Verify tenant namespaces are different
+		g.Expect(tenantA.GetTenantNamespace()).Should(Equal("tenant-a"))
+		g.Expect(tenantB.GetTenantNamespace()).Should(Equal("tenant-b"))
+		g.Expect(tenantA.GetTenantNamespace()).ShouldNot(Equal(tenantB.GetTenantNamespace()))
+
+		// Verify gateway namespace is shared (as configured)
+		g.Expect(tenantA.GetGatewayNamespace()).Should(Equal("gateway-ns"))
+		g.Expect(tenantB.GetGatewayNamespace()).Should(Equal("gateway-ns"))
+	})
+
+	t.Run("should create tenant-specific DestinationRule names to avoid conflicts", func(t *testing.T) {
+		// When multiple tenants share a gateway namespace, DestinationRules need unique names
+		tenantA := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-a"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				GatewayRef: componentApi.GatewayRef{
+					Namespace: "shared-gateway-ns",
+					Name:      "shared-gateway",
+				},
+			},
+		}
+
+		tenantB := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-b"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				GatewayRef: componentApi.GatewayRef{
+					Namespace: "shared-gateway-ns",
+					Name:      "shared-gateway",
+				},
+			},
+		}
+
+		// Create DestinationRules for each tenant
+		drA := createDestinationRule(GatewayDestinationRuleName, "placeholder")
+		drB := createDestinationRule(GatewayDestinationRuleName, "placeholder")
+
+		rrA := &types.ReconciliationRequest{
+			Instance:  tenantA,
+			Resources: []unstructured.Unstructured{drA},
+		}
+		rrB := &types.ReconciliationRequest{
+			Instance:  tenantB,
+			Resources: []unstructured.Unstructured{drB},
+		}
+
+		// Configure gateway namespace resources for each tenant
+		err := configureGatewayNamespaceResources(t.Context(), rrA)
+		g.Expect(err).ShouldNot(HaveOccurred())
+
+		err = configureGatewayNamespaceResources(t.Context(), rrB)
+		g.Expect(err).ShouldNot(HaveOccurred())
+
+		// Verify DestinationRules have tenant-specific names
+		g.Expect(rrA.Resources[0].GetName()).Should(Equal(GatewayDestinationRuleName + "-tenant-a"))
+		g.Expect(rrB.Resources[0].GetName()).Should(Equal(GatewayDestinationRuleName + "-tenant-b"))
+		g.Expect(rrA.Resources[0].GetName()).ShouldNot(Equal(rrB.Resources[0].GetName()),
+			"DestinationRules should have unique names per tenant")
+
+		// Verify both are in the shared gateway namespace
+		g.Expect(rrA.Resources[0].GetNamespace()).Should(Equal("shared-gateway-ns"))
+		g.Expect(rrB.Resources[0].GetNamespace()).Should(Equal("shared-gateway-ns"))
+	})
+}
+
+func TestMultiTenantClusterScopedResources(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should create tenant-specific ClusterRole names", func(t *testing.T) {
+		tenantA := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-a"},
+		}
+		tenantB := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-b"},
+		}
+
+		// Create ClusterRole resources
+		crA := &unstructured.Unstructured{}
+		crA.SetAPIVersion("rbac.authorization.k8s.io/v1")
+		crA.SetKind("ClusterRole")
+		crA.SetName("maas-api-role")
+
+		crB := &unstructured.Unstructured{}
+		crB.SetAPIVersion("rbac.authorization.k8s.io/v1")
+		crB.SetKind("ClusterRole")
+		crB.SetName("maas-api-role")
+
+		rrA := &types.ReconciliationRequest{
+			Instance:  tenantA,
+			Resources: []unstructured.Unstructured{*crA},
+		}
+		rrB := &types.ReconciliationRequest{
+			Instance:  tenantB,
+			Resources: []unstructured.Unstructured{*crB},
+		}
+
+		// Configure tenant resources (this should rename cluster-scoped resources)
+		err := configureTenantResources(t.Context(), rrA)
+		g.Expect(err).ShouldNot(HaveOccurred())
+
+		err = configureTenantResources(t.Context(), rrB)
+		g.Expect(err).ShouldNot(HaveOccurred())
+
+		// Verify ClusterRoles have tenant-specific names
+		g.Expect(rrA.Resources[0].GetName()).Should(ContainSubstring("tenant-a"))
+		g.Expect(rrB.Resources[0].GetName()).Should(ContainSubstring("tenant-b"))
+		g.Expect(rrA.Resources[0].GetName()).ShouldNot(Equal(rrB.Resources[0].GetName()),
+			"ClusterRoles should have unique names per tenant")
+	})
+}
+
+func TestAuthenticationOverlaySelection(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should select OIDC overlay when OIDC is configured", func(t *testing.T) {
+		maas := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-oidc"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				Authentication: &componentApi.AuthenticationSpec{
+					OIDC: &componentApi.OIDCAuthSpec{
+						JwksURL: "https://keycloak.example.com/realms/test/protocol/openid-connect/certs",
+						Issuer:  "https://keycloak.example.com/realms/test",
+					},
+				},
+			},
+		}
+
+		// OIDC is configured when JwksURL is non-empty
+		g.Expect(maas.GetOIDCJwksURL()).ShouldNot(BeEmpty())
+		g.Expect(maas.IsClusterIdentityAuthEnabled()).Should(BeFalse())
+	})
+
+	t.Run("should select SA-only overlay when only clusterIdentities is configured", func(t *testing.T) {
+		maas := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-sa"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				Authentication: &componentApi.AuthenticationSpec{
+					ClusterIdentities: &componentApi.ClusterIdentityAuthSpec{},
+				},
+			},
+		}
+
+		g.Expect(maas.GetOIDCJwksURL()).Should(BeEmpty())
+		g.Expect(maas.IsClusterIdentityAuthEnabled()).Should(BeTrue())
+	})
+
+	t.Run("should support hybrid auth (both OIDC and clusterIdentities)", func(t *testing.T) {
+		maas := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-hybrid"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				Authentication: &componentApi.AuthenticationSpec{
+					OIDC: &componentApi.OIDCAuthSpec{
+						JwksURL: "https://keycloak.example.com/realms/test/protocol/openid-connect/certs",
+						Issuer:  "https://keycloak.example.com/realms/test",
+					},
+					ClusterIdentities: &componentApi.ClusterIdentityAuthSpec{},
+				},
+			},
+		}
+
+		g.Expect(maas.GetOIDCJwksURL()).ShouldNot(BeEmpty())
+		g.Expect(maas.IsClusterIdentityAuthEnabled()).Should(BeTrue())
+	})
+
+	t.Run("should handle no authentication configured", func(t *testing.T) {
+		maas := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-no-auth"},
+			Spec:       componentApi.ModelsAsServiceSpec{},
+		}
+
+		g.Expect(maas.GetOIDCJwksURL()).Should(BeEmpty())
+		g.Expect(maas.IsClusterIdentityAuthEnabled()).Should(BeFalse())
+	})
+
+	t.Run("different tenants can have different auth configurations", func(t *testing.T) {
+		tenantOIDC := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-oidc"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				Authentication: &componentApi.AuthenticationSpec{
+					OIDC: &componentApi.OIDCAuthSpec{
+						JwksURL: "https://keycloak.example.com/realms/oidc/protocol/openid-connect/certs",
+					},
+				},
+			},
+		}
+
+		tenantSA := &componentApi.ModelsAsService{
+			ObjectMeta: metav1.ObjectMeta{Name: "tenant-sa"},
+			Spec: componentApi.ModelsAsServiceSpec{
+				Authentication: &componentApi.AuthenticationSpec{
+					ClusterIdentities: &componentApi.ClusterIdentityAuthSpec{},
+				},
+			},
+		}
+
+		// Verify different tenants can have different auth modes
+		g.Expect(tenantOIDC.GetOIDCJwksURL()).ShouldNot(BeEmpty())
+		g.Expect(tenantOIDC.IsClusterIdentityAuthEnabled()).Should(BeFalse())
+
+		g.Expect(tenantSA.GetOIDCJwksURL()).Should(BeEmpty())
+		g.Expect(tenantSA.IsClusterIdentityAuthEnabled()).Should(BeTrue())
+	})
 }
