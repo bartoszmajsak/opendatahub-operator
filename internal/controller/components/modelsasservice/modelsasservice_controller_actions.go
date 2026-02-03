@@ -41,10 +41,8 @@ import (
 )
 
 // getTenantNamespace returns the tenant namespace for the current ModelsAsService CR.
-// This is used by the GC action to scope garbage collection to only the tenant's resources,
-// preventing cross-tenant resource deletion in multi-tenant deployments.
-//
-//nolint:unused // Will be used when GC is re-enabled (see modelsasservice_controller.go)
+// This is used by the deployment status action and GC action to scope operations
+// to only the tenant's resources, preventing cross-tenant issues in multi-tenant deployments.
 func getTenantNamespace(_ context.Context, rr *types.ReconciliationRequest) (string, error) {
 	maas, ok := rr.Instance.(*componentApi.ModelsAsService)
 	if !ok {

@@ -31,7 +31,7 @@ import (
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/cluster/gvk"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/deploy"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/render/kustomize"
-	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/status/deployments"
+	deploymentsStatus "github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/status/deployments"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/predicates/resources"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/reconciler"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/metadata/labels"
@@ -91,8 +91,10 @@ func (s *componentHandler) NewComponentReconciler(ctx context.Context, mgr ctrl.
 		WithAction(deploy.NewAction(
 			deploy.WithCache(),
 		)).
-		// 9. Update deployment status
-		WithAction(deployments.NewAction()).
+		// 9. Update deployment status (check tenant namespace, not ODH app namespace)
+		WithAction(deploymentsStatus.NewAction(
+			deploymentsStatus.InNamespaceFn(getTenantNamespace),
+		)).
 		// 10. Garbage collect orphaned resources in the tenant namespace.
 		// NOTE: GC is temporarily disabled to debug reconciliation loop.
 		// TODO: Re-enable once loop is resolved.
