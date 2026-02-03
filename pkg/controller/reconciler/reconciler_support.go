@@ -95,6 +95,7 @@ type ReconcilerBuilder[T common.PlatformObject] struct {
 	errors              error
 	happyCondition      string
 	dependentConditions []string
+	client              client.Client // optional custom client (e.g., with different cache)
 }
 
 func ReconcilerFor[T common.PlatformObject](mgr ctrl.Manager, object T, opts ...builder.ForOption) *ReconcilerBuilder[T] {
@@ -132,6 +133,14 @@ func (b *ReconcilerBuilder[T]) WithConditions(dependents ...string) *ReconcilerB
 
 func (b *ReconcilerBuilder[T]) WithInstanceName(instanceName string) *ReconcilerBuilder[T] {
 	b.instanceName = instanceName
+	return b
+}
+
+// WithClient sets a custom client for the reconciler.
+// This allows using a client backed by a different cache (e.g., with label filtering)
+// while keeping the same manager for controller lifecycle.
+func (b *ReconcilerBuilder[T]) WithClient(cli client.Client) *ReconcilerBuilder[T] {
+	b.client = cli
 	return b
 }
 
@@ -228,7 +237,13 @@ func (b *ReconcilerBuilder[T]) Build(_ context.Context) (*Reconciler, error) {
 		return nil, errors.New("invalid type for object")
 	}
 
-	r, err := NewReconciler(b.mgr, name, obj, WithConditionsManagerFactory(b.happyCondition, b.dependentConditions...))
+	// Build reconciler options
+	opts := []ReconcilerOpt{WithConditionsManagerFactory(b.happyCondition, b.dependentConditions...)}
+	if b.client != nil {
+		opts = append(opts, WithReconcilerClient(b.client))
+	}
+
+	r, err := NewReconciler(b.mgr, name, obj, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reconciler for component %s: %w", name, err)
 	}

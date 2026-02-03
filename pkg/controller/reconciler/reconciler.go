@@ -45,6 +45,15 @@ func WithConditionsManagerFactory(happy string, dependents ...string) Reconciler
 	}
 }
 
+// WithReconcilerClient sets a custom client for the reconciler.
+// This is useful when the reconciler needs a client backed by a different cache
+// (e.g., with label filtering for multi-tenant components).
+func WithReconcilerClient(cli client.Client) ReconcilerOpt {
+	return func(reconciler *Reconciler) {
+		reconciler.Client = cli
+	}
+}
+
 const platformFinalizer = "platform.opendatahub.io/finalizer"
 
 // Reconciler provides generic reconciliation functionality for ODH objects.
