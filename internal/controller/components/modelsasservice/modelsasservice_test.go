@@ -103,57 +103,56 @@ func TestIsEnabled(t *testing.T) {
 func TestUpdateDSCStatus(t *testing.T) {
 	handler := &componentHandler{}
 
-	t.Run("should handle enabled component with ready ModelsAsService CR", func(t *testing.T) {
-		g := NewWithT(t)
-		ctx := t.Context()
+	readinessTests := []struct {
+		name            string
+		maasReady       bool
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			name:            "should handle enabled component with ready ModelsAsService CR",
+			maasReady:       true,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  status.ReadyReason,
+			expectedMessage: "Component is ready",
+		},
+		{
+			name:            "should handle enabled component with not ready ModelsAsService CR",
+			maasReady:       false,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  status.NotReadyReason,
+			expectedMessage: "Component is not ready",
+		},
+	}
 
-		dsc := createDSCWithKServeAndMaaS(operatorv1.Managed, operatorv1.Managed)
-		maas := createModelsAsServiceCR(true)
+	for _, tc := range readinessTests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := t.Context()
 
-		cli, err := fakeclient.New(fakeclient.WithObjects(dsc, maas))
-		g.Expect(err).ShouldNot(HaveOccurred())
+			dsc := createDSCWithKServeAndMaaS(operatorv1.Managed, operatorv1.Managed)
+			maas := createModelsAsServiceCR(tc.maasReady)
 
-		cs, err := handler.UpdateDSCStatus(ctx, &ctrlTypes.ReconciliationRequest{
-			Client:     cli,
-			Instance:   dsc,
-			Conditions: conditions.NewManager(dsc, ReadyConditionType),
+			cli, err := fakeclient.New(fakeclient.WithObjects(dsc, maas))
+			g.Expect(err).ShouldNot(HaveOccurred())
+
+			cs, err := handler.UpdateDSCStatus(ctx, &ctrlTypes.ReconciliationRequest{
+				Client:     cli,
+				Instance:   dsc,
+				Conditions: conditions.NewManager(dsc, ReadyConditionType),
+			})
+
+			g.Expect(err).ShouldNot(HaveOccurred())
+			g.Expect(cs).Should(Equal(tc.expectedStatus))
+
+			g.Expect(dsc).Should(WithTransform(json.Marshal, And(
+				jq.Match(`.status.conditions[] | select(.type == "%s") | .status == "%s"`, ReadyConditionType, tc.expectedStatus),
+				jq.Match(`.status.conditions[] | select(.type == "%s") | .reason == "%s"`, ReadyConditionType, tc.expectedReason),
+				jq.Match(`.status.conditions[] | select(.type == "%s") | .message == "%s"`, ReadyConditionType, tc.expectedMessage)),
+			))
 		})
-
-		g.Expect(err).ShouldNot(HaveOccurred())
-		g.Expect(cs).Should(Equal(metav1.ConditionTrue))
-
-		g.Expect(dsc).Should(WithTransform(json.Marshal, And(
-			jq.Match(`.status.conditions[] | select(.type == "%s") | .status == "%s"`, ReadyConditionType, metav1.ConditionTrue),
-			jq.Match(`.status.conditions[] | select(.type == "%s") | .reason == "%s"`, ReadyConditionType, status.ReadyReason),
-			jq.Match(`.status.conditions[] | select(.type == "%s") | .message == "Component is ready"`, ReadyConditionType)),
-		))
-	})
-
-	t.Run("should handle enabled component with not ready ModelsAsService CR", func(t *testing.T) {
-		g := NewWithT(t)
-		ctx := t.Context()
-
-		dsc := createDSCWithKServeAndMaaS(operatorv1.Managed, operatorv1.Managed)
-		maas := createModelsAsServiceCR(false)
-
-		cli, err := fakeclient.New(fakeclient.WithObjects(dsc, maas))
-		g.Expect(err).ShouldNot(HaveOccurred())
-
-		cs, err := handler.UpdateDSCStatus(ctx, &ctrlTypes.ReconciliationRequest{
-			Client:     cli,
-			Instance:   dsc,
-			Conditions: conditions.NewManager(dsc, ReadyConditionType),
-		})
-
-		g.Expect(err).ShouldNot(HaveOccurred())
-		g.Expect(cs).Should(Equal(metav1.ConditionFalse))
-
-		g.Expect(dsc).Should(WithTransform(json.Marshal, And(
-			jq.Match(`.status.conditions[] | select(.type == "%s") | .status == "%s"`, ReadyConditionType, metav1.ConditionFalse),
-			jq.Match(`.status.conditions[] | select(.type == "%s") | .reason == "%s"`, ReadyConditionType, status.NotReadyReason),
-			jq.Match(`.status.conditions[] | select(.type == "%s") | .message == "Component is not ready"`, ReadyConditionType)),
-		))
-	})
+	}
 
 	t.Run("should handle disabled component (MaaS removed)", func(t *testing.T) {
 		g := NewWithT(t)

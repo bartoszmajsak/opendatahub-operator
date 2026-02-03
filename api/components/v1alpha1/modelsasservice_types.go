@@ -285,10 +285,14 @@ type DSCModelsAsServiceSpec struct {
 	// +kubebuilder:default=Removed
 	ManagementState operatorv1.ManagementState `json:"managementState,omitempty"`
 
-	// GatewayRef and Authentication configuration for the default tenant.
-	// Only these settings are configurable via DSC; additional tenants
-	// with full configuration should be created as separate ModelsAsService CRs.
-	ModelsAsServiceSpec `json:",inline"`
+	// GatewayRef references an existing Gateway for the default "opendatahub" tenant.
+	// If not specified, the default gateway naming convention is used.
+	// +optional
+	GatewayRef GatewayRef `json:"gatewayRef,omitempty"`
+
+	// Authentication configures identity providers for the default "opendatahub" tenant.
+	// +optional
+	Authentication *AuthenticationSpec `json:"authentication,omitempty"`
 }
 
 // DSCModelsAsServiceStatus contains the observed state of the ModelsAsService exposed in the DSC instance.
