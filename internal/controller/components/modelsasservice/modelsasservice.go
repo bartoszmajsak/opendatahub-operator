@@ -59,7 +59,9 @@ func (s *componentHandler) Init(_ common.Platform) error {
 	return nil
 }
 
-// NewCRObject constructs a new ModelsAsService Custom Resource.
+// NewCRObject constructs a new ModelsAsService Custom Resource for the default tenant.
+// This is called when ModelsAsService is enabled via DataScienceCluster.
+// Additional tenants should be created by applying ModelsAsService CRs directly.
 func (s *componentHandler) NewCRObject(dsc *dscv2.DataScienceCluster) common.PlatformObject {
 	// Extract ModelsAsService configuration from KServe component in DSC
 	maasConfig := dsc.Spec.Components.Kserve.ModelsAsService
@@ -70,16 +72,38 @@ func (s *componentHandler) NewCRObject(dsc *dscv2.DataScienceCluster) common.Pla
 		managementState = maasConfig.ManagementState
 	}
 
+	// Configure GatewayRef - DSC can override gateway reference for the default tenant
+	gatewayRef := componentApi.GatewayRef{}
+
+	// Override with DSC configuration if provided
+	if maasConfig.GatewayRef.Namespace != "" {
+		gatewayRef.Namespace = maasConfig.GatewayRef.Namespace
+	}
+	if maasConfig.GatewayRef.Name != "" {
+		gatewayRef.Name = maasConfig.GatewayRef.Name
+	}
+
+	// Copy authentication config if provided
+	var authSpec *componentApi.AuthenticationSpec
+	if maasConfig.Authentication != nil {
+		authSpec = maasConfig.Authentication.DeepCopy()
+	}
+
 	return &componentApi.ModelsAsService{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       componentApi.ModelsAsServiceKind,
 			APIVersion: componentApi.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: componentApi.ModelsAsServiceInstanceName,
+			// Default tenant name - derives namespace "opendatahub"
+			Name: componentApi.DefaultModelsAsServiceInstanceName,
 			Annotations: map[string]string{
 				annotations.ManagementStateAnnotation: string(managementState),
 			},
+		},
+		Spec: componentApi.ModelsAsServiceSpec{
+			GatewayRef:     gatewayRef,
+			Authentication: authSpec,
 		},
 	}
 }
@@ -99,11 +123,13 @@ func (s *componentHandler) IsEnabled(dsc *dscv2.DataScienceCluster) bool {
 }
 
 // UpdateDSCStatus updates the ModelsAsService component status in the DataScienceCluster.
+// This reports status for the default tenant instance created by DSC.
 func (s *componentHandler) UpdateDSCStatus(ctx context.Context, rr *types.ReconciliationRequest) (metav1.ConditionStatus, error) {
 	cs := metav1.ConditionUnknown
 
+	// Get the default tenant instance (created by DSC)
 	c := componentApi.ModelsAsService{}
-	c.Name = componentApi.ModelsAsServiceInstanceName
+	c.Name = componentApi.DefaultModelsAsServiceInstanceName
 
 	if err := rr.Client.Get(ctx, client.ObjectKeyFromObject(&c), &c); err != nil && !k8serr.IsNotFound(err) {
 		return cs, nil

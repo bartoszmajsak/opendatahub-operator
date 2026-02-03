@@ -24,26 +24,31 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	componentApi "github.com/opendatahub-io/opendatahub-operator/v2/api/components/v1alpha1"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/cluster/gvk"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/deploy"
-	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/gc"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/render/kustomize"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/actions/status/deployments"
-	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/handlers"
-	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/predicates/component"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/predicates/resources"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/reconciler"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/metadata/labels"
 )
 
 // NewComponentReconciler creates a new ModelsAsService controller.
+// The controller reconciles ModelsAsService CRs, where each CR represents a tenant.
+// The CR name determines the tenant namespace where resources are deployed.
 func (s *componentHandler) NewComponentReconciler(ctx context.Context, mgr ctrl.Manager) error {
-	_, err := reconciler.ReconcilerFor(mgr, &componentApi.ModelsAsService{}).
+	// Use MaaS-specific client if provided via context (has label-filtered cache).
+	// Falls back to manager's default client if not set.
+	rb := reconciler.ReconcilerFor(mgr, &componentApi.ModelsAsService{})
+	if maasClient := ClientFromContext(ctx); maasClient != nil {
+		rb = rb.WithClient(maasClient)
+	}
+
+	_, err := rb.
 		// Core Kubernetes resources deployed by MaaS manifests
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
@@ -56,43 +61,45 @@ func (s *componentHandler) NewComponentReconciler(ctx context.Context, mgr ctrl.
 		Owns(&networkingv1.NetworkPolicy{}).
 		// Gateway API resources
 		Owns(&gwapiv1.HTTPRoute{}).
-		Owns(&gwapiv1.Gateway{}).
+		// NOTE: Gateway is NOT owned - MaaS validates Gateway exists but doesn't create it.
 		// Third-party CRDs that may not be available in all environments.
 		OwnsGVK(gvk.AuthPolicyv1, reconciler.Dynamic(reconciler.CrdExists(gvk.AuthPolicyv1))).
 		OwnsGVK(gvk.DestinationRule, reconciler.Dynamic(reconciler.CrdExists(gvk.DestinationRule))).
-		Watches(
-			&extv1.CustomResourceDefinition{},
-			reconciler.WithEventHandler(
-				handlers.ToNamed(componentApi.ModelsAsServiceInstanceName)),
-			reconciler.WithPredicates(
-				component.ForLabel(labels.ODH.Component(ComponentName), labels.True)),
-		).
-		// Note: The component manifests define a configmap with the annotation
-		// opendatahub.io/managed: "false". Adding this watch allows the controller to
-		// recreate the configmap with default values when it is deleted.
-		Watches(
-			&corev1.ConfigMap{},
-			reconciler.WithEventHandler(
-				handlers.ToNamed(componentApi.ModelsAsServiceInstanceName),
-			),
-			reconciler.WithPredicates(resources.Deleted()),
-		).
+		// NOTE: CRD watch disabled for multi-tenancy - it routes to a fixed instance name.
+		// NOTE: ConfigMap watch removed for multi-tenancy support.
+		// With cluster-wide cache, a generic ConfigMap watch would trigger
+		// reconciliation for ANY ConfigMap deletion cluster-wide.
+		// The Owns(&corev1.ConfigMap{}) handles owned ConfigMaps via owner references.
+		// Reconciliation actions pipeline:
+		// 1. Initialize manifests
 		WithAction(initialize).
+		// 2. Ensure tenant namespace exists (creates if needed)
+		WithAction(ensureTenantNamespace).
+		// 3. Validate gateway exists
 		WithAction(validateGateway).
+		// 4. Customize manifests with tenant-specific params
 		WithAction(customizeManifests).
+		// 5. Render manifests via kustomize
 		WithAction(kustomize.NewAction(
 			kustomize.WithLabel(labels.ODH.Component(ComponentName), labels.True),
 		)).
-		// WithAction(releases.NewAction()). // TODO: Do we need this? How to fix annotation of "platform.opendatahub.io/version:0.0.0"
+		// 6. Configure tenant-namespace resources (maas-api Deployment)
+		WithAction(configureTenantResources).
+		// 7. Configure gateway-namespace resources (AuthPolicy, DestinationRule)
 		WithAction(configureGatewayNamespaceResources).
+		// 8. Deploy resources to cluster
 		WithAction(deploy.NewAction(
 			deploy.WithCache(),
 		)).
+		// 9. Update deployment status
 		WithAction(deployments.NewAction()).
-		// must be the final action
-		WithAction(gc.NewAction()).
-		// declares the list of additional, controller specific conditions that are
-		// contributing to the controller readiness status
+		// 10. Garbage collect orphaned resources in the tenant namespace.
+		// NOTE: GC is temporarily disabled to debug reconciliation loop.
+		// TODO: Re-enable once loop is resolved.
+		// WithAction(gc.NewAction(
+		// 	gc.InNamespaceFn(getTenantNamespace),
+		// )).
+		// Declares additional conditions contributing to readiness status
 		WithConditions(conditionTypes...).
 		Build(ctx)
 	if err != nil {

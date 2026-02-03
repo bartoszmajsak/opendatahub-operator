@@ -17,23 +17,41 @@ limitations under the License.
 package modelsasservice
 
 import (
+	"context"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	componentApi "github.com/opendatahub-io/opendatahub-operator/v2/api/components/v1alpha1"
 	"github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/status"
 	odhtypes "github.com/opendatahub-io/opendatahub-operator/v2/pkg/controller/types"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/deploy"
 )
 
+// maasClientKey is a context key for the MaaS-specific client.
+type maasClientKey struct{}
+
+// ContextWithClient returns a new context with the MaaS client.
+func ContextWithClient(ctx context.Context, cli client.Client) context.Context {
+	return context.WithValue(ctx, maasClientKey{}, cli)
+}
+
+// ClientFromContext retrieves the MaaS client from context.
+// Returns nil if no client was set.
+func ClientFromContext(ctx context.Context) client.Client {
+	cli, _ := ctx.Value(maasClientKey{}).(client.Client)
+	return cli
+}
+
 const (
 	ComponentName = componentApi.ModelsAsServiceComponentName
 
 	ReadyConditionType = componentApi.ModelsAsServiceKind + status.ReadySuffix
 
-	// Default Gateway values as specified in the spec.
-	DefaultGatewayNamespace = "openshift-ingress"
-	DefaultGatewayName      = "maas-default-gateway"
-
 	// Manifest paths.
+	// BaseManifestsSourcePath is the default overlay (SA auth only).
 	BaseManifestsSourcePath = "overlays/odh"
+	// OIDCManifestsSourcePath is the overlay with OIDC authentication support.
+	OIDCManifestsSourcePath = "overlays/odh-oidc"
 
 	// GatewayAuthPolicyName is the name of the AuthPolicy resource that configures
 	// authentication for the MaaS gateway. This resource needs to be deployed to
@@ -44,6 +62,19 @@ const (
 	// configures TLS for the MaaS gateway. This resource needs to be deployed to
 	// the same namespace as the gateway it targets.
 	GatewayDestinationRuleName = "maas-api-backend-tls"
+
+	// MaaSAPIAuthPolicyName is the name of the AuthPolicy resource that protects
+	// the maas-api HTTPRoute. This is separate from the gateway-level auth policy.
+	MaaSAPIAuthPolicyName = "maas-api-auth-policy"
+
+	// MaaSParametersConfigMapName is the name of the ConfigMap that holds
+	// configuration parameters for maas-api (gateway name, namespace, etc.).
+	MaaSParametersConfigMapName = "maas-parameters"
+
+	// TenantLabel is used to label all resources belonging to a specific tenant.
+	// This enables proper GC filtering and prevents cross-tenant resource deletion
+	// in multi-tenant deployments.
+	TenantLabel = "opendatahub.io/maas-tenant"
 )
 
 var (
@@ -52,10 +83,11 @@ var (
 		"maas-api-image": "RELATED_IMAGE_ODH_MAAS_API_IMAGE",
 	}
 
-	// Additional parameters for manifest customization.
+	// extraParamsMap provides default parameters for manifest customization.
+	// These are overridden per-tenant during reconciliation.
 	extraParamsMap = map[string]string{
-		"gateway-namespace": DefaultGatewayNamespace,
-		"gateway-name":      DefaultGatewayName,
+		"gateway-namespace": componentApi.DefaultGatewayNamespace,
+		"gateway-name":      "opendatahub-gateway", // default for DSC-created instance
 	}
 
 	conditionTypes = []string{
