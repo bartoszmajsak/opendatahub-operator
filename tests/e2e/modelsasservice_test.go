@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	componentApi "github.com/opendatahub-io/opendatahub-operator/v2/api/components/v1alpha1"
-	"github.com/opendatahub-io/opendatahub-operator/v2/internal/controller/components/modelsasservice"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/cluster"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/cluster/gvk"
 	"github.com/opendatahub-io/opendatahub-operator/v2/pkg/utils/test/testf"
@@ -23,13 +22,17 @@ const (
 	// This must match the JSON tag in KserveCommonSpec.ModelsAsService.
 	modelsAsServiceFieldName = "modelsAsService"
 
-	// Gateway constants from modelsasservice package.
-	maasGatewayNamespace = modelsasservice.DefaultGatewayNamespace
-	maasGatewayName      = modelsasservice.DefaultGatewayName
-
 	// Gateway class for OpenShift default ingress controller.
 	// Reference: https://github.com/opendatahub-io/models-as-a-service/blob/main/deployment/base/networking/maas/maas-gateway-api.yaml
 	maasGatewayClassName = "openshift-default"
+)
+
+var (
+	// Gateway constants derived from API defaults.
+	// DefaultGatewayNamespace is defined in componentApi.
+	// Default gateway name follows the pattern {tenant-name}-gateway.
+	maasGatewayNamespace = componentApi.DefaultGatewayNamespace
+	maasGatewayName      = fmt.Sprintf("%s-gateway", componentApi.DefaultModelsAsServiceInstanceName)
 )
 
 func modelsAsServiceTestSuite(t *testing.T) {
