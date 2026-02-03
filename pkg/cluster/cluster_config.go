@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -502,4 +504,62 @@ func IsIntegratedOAuth(ctx context.Context, cli client.Reader) (bool, error) {
 		return false, err
 	}
 	return authMode == AuthModeIntegratedOAuth, nil
+}
+
+const (
+	// DefaultServiceAccountIssuer is the standard Kubernetes API server audience.
+	DefaultServiceAccountIssuer = "https://kubernetes.default.svc"
+	serviceAccountTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // Not a credential, just a file path
+)
+
+// GetServiceAccountIssuer retrieves the cluster's ServiceAccount token issuer/audience
+// for TokenReview validation. Discovery order: mounted token → OpenShift config → default.
+func GetServiceAccountIssuer(ctx context.Context, cli client.Reader) string {
+	log := logf.FromContext(ctx)
+
+	if issuer := getIssuerFromMountedToken(log); issuer != "" {
+		return issuer
+	}
+
+	auth := &configv1.Authentication{}
+	if err := cli.Get(ctx, client.ObjectKey{Name: ClusterAuthenticationObj}, auth); err == nil {
+		if auth.Spec.ServiceAccountIssuer != "" {
+			log.V(1).Info("Discovered ServiceAccount issuer from OpenShift config",
+				"issuer", auth.Spec.ServiceAccountIssuer)
+			return auth.Spec.ServiceAccountIssuer
+		}
+	}
+
+	log.V(1).Info("Using default ServiceAccount issuer", "issuer", DefaultServiceAccountIssuer)
+	return DefaultServiceAccountIssuer
+}
+
+// getIssuerFromMountedToken extracts the "iss" claim from the mounted ServiceAccount JWT token.
+func getIssuerFromMountedToken(log logr.Logger) string {
+	tokenBytes, err := os.ReadFile(serviceAccountTokenPath)
+	if err != nil {
+		return ""
+	}
+
+	parts := strings.Split(string(tokenBytes), ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+
+	var claims struct {
+		Issuer string `json:"iss"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+
+	if claims.Issuer != "" {
+		log.V(1).Info("Discovered ServiceAccount issuer from mounted token", "issuer", claims.Issuer)
+	}
+	return claims.Issuer
 }
